@@ -23,6 +23,8 @@ export type UserProfile = {
   published: boolean;
 };
 
+export type CaseStudyType = "manual" | "document";
+
 export type CaseStudy = {
   id: string;
   userId: string;
@@ -35,6 +37,8 @@ export type CaseStudy = {
   coverImageUrl: string;
   published: boolean;
   sortOrder: number;
+  type: CaseStudyType;
+  primaryDocumentUrl?: string;
 };
 
 export type CaseStudyBlock = {
@@ -114,6 +118,7 @@ export const initialPortfolio: PortfolioData = {
       coverImageUrl: "",
       published: true,
       sortOrder: 1,
+      type: "manual",
     },
     {
       id: "case-reporting",
@@ -128,6 +133,7 @@ export const initialPortfolio: PortfolioData = {
       coverImageUrl: "",
       published: true,
       sortOrder: 2,
+      type: "manual",
     },
   ],
   blocks: [

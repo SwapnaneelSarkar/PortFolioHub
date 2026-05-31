@@ -35,7 +35,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default function PortfolioPage({ params }: PageProps) {
+export default async function PortfolioPage({ params }: PageProps) {
+  const { username } = await params;
+
   return (
     <Suspense
       fallback={
@@ -44,9 +46,7 @@ export default function PortfolioPage({ params }: PageProps) {
         </div>
       }
     >
-      {params.then(({ username }) => (
-        <PortfolioContent username={username} />
-      ))}
+      <PortfolioContent username={username} />
     </Suspense>
   );
 }

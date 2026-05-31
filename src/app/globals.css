@@ -1,5 +1,5 @@
-@import "tailwindcss";
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
 
 :root {
   --background: #f5f3f0;
@@ -151,10 +151,7 @@ body {
 
 /* ── Gradient text ─────────────────────────── */
 .gradient-text {
-  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #c084fc 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  @apply bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent;
 }
 
 .gradient-text-warm {

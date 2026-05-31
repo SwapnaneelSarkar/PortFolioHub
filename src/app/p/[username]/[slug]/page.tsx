@@ -17,16 +17,20 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const result = await fetchPublicCaseStudy(username, slug);
 
   if (result && !("error" in result)) {
-    const { profile, caseStudy } = result;
-    return {
-      title: `${caseStudy.title} | ${profile.displayName} Case Study`,
-      description: `${caseStudy.summary}. Lead role: ${caseStudy.role} at ${caseStudy.company}.`,
-      openGraph: {
-        title: caseStudy.title,
-        description: caseStudy.summary,
-        type: "article",
-      },
-    };
+    const { profile, caseStudies } = result;
+    const caseStudy = caseStudies?.[0];
+
+    if (caseStudy) {
+      return {
+        title: `${caseStudy.title} | ${profile.displayName} Case Study`,
+        description: `${caseStudy.summary}. Lead role: ${caseStudy.role} at ${caseStudy.company}.`,
+        openGraph: {
+          title: caseStudy.title,
+          description: caseStudy.summary,
+          type: "article",
+        },
+      };
+    }
   }
 
   return {
@@ -35,7 +39,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default function CaseStudyPage({ params }: PageProps) {
+export default async function CaseStudyPage({ params }: PageProps) {
+  const { username, slug } = await params;
+
   return (
     <Suspense
       fallback={
@@ -44,9 +50,7 @@ export default function CaseStudyPage({ params }: PageProps) {
         </div>
       }
     >
-      {params.then(({ username, slug }) => (
-        <CaseStudyContent username={username} slug={slug} />
-      ))}
+      <CaseStudyContent username={username} slug={slug} />
     </Suspense>
   );
 }

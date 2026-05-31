@@ -49,6 +49,8 @@ function toCaseCamel(row: any): CaseStudy {
     coverImageUrl: row.cover_image_url ?? "",
     published: row.published ?? false,
     sortOrder: row.sort_order ?? 0,
+    type: row.type ?? "manual",
+    primaryDocumentUrl: row.primary_document_url ?? "",
   };
 }
 
@@ -63,6 +65,8 @@ function toCaseSnake(camel: Partial<CaseStudy>) {
   if (camel.coverImageUrl !== undefined) result.cover_image_url = camel.coverImageUrl;
   if (camel.published !== undefined) result.published = camel.published;
   if (camel.sortOrder !== undefined) result.sort_order = camel.sortOrder;
+  if (camel.type !== undefined) result.type = camel.type;
+  if (camel.primaryDocumentUrl !== undefined) result.primary_document_url = camel.primaryDocumentUrl;
   return result;
 }
 
@@ -131,7 +135,7 @@ export async function saveProfile(data: Partial<UserProfile>) {
   return { success: true, profile: toProfileCamel(row) };
 }
 
-export async function createCaseStudy(slug: string, title: string) {
+export async function createCaseStudy(slug: string, title: string, type: "manual" | "document" = "manual") {
   const supabase = await createClient();
   if (!supabase) return { error: "Supabase not configured" };
 
@@ -153,12 +157,15 @@ export async function createCaseStudy(slug: string, title: string) {
       user_id: user.id,
       slug,
       title,
-      summary: "Summarize the customer problem, your product decision, and the measurable result.",
+      summary: type === "manual" 
+        ? "Summarize the customer problem, your product decision, and the measurable result."
+        : "Upload your product document (PRD, Strategy, Roadmap) to share your thinking directly.",
       role: "Product Manager",
       company: "Company or product",
       timeframe: "2026",
       published: false,
       sort_order: sortOrder,
+      type: type,
     })
     .select()
     .single();
@@ -169,29 +176,37 @@ export async function createCaseStudy(slug: string, title: string) {
 
   const createdCase = toCaseCamel(row);
 
-  // Initialize guided story blocks for the new case study
-  const defaultBlocks = ["problem", "research", "strategy", "execution", "metrics", "learnings"];
-  const blocksToInsert = defaultBlocks.map((type, index) => ({
-    case_study_id: createdCase.id,
-    type,
-    title: type.charAt(0).toUpperCase() + type.slice(1),
-    content: "",
-    sort_order: index + 1,
-  }));
+  // Initialize guided story blocks ONLY for manual type
+  if (type === "manual") {
+    const defaultBlocks = ["problem", "research", "strategy", "execution", "metrics", "learnings"];
+    const blocksToInsert = defaultBlocks.map((type, index) => ({
+      case_study_id: createdCase.id,
+      type,
+      title: type.charAt(0).toUpperCase() + type.slice(1),
+      content: "",
+      sort_order: index + 1,
+    }));
 
-  const { data: blockRows, error: blockError } = await supabase
-    .from("case_study_blocks")
-    .insert(blocksToInsert)
-    .select();
+    const { data: blockRows, error: blockError } = await supabase
+      .from("case_study_blocks")
+      .insert(blocksToInsert)
+      .select();
 
-  if (blockError) {
-    return { error: `Case study created but blocks failed: ${blockError.message}` };
+    if (blockError) {
+      return { error: `Case study created but blocks failed: ${blockError.message}` };
+    }
+
+    return {
+      success: true,
+      caseStudy: createdCase,
+      blocks: blockRows.map(toBlockCamel),
+    };
   }
 
   return {
     success: true,
     caseStudy: createdCase,
-    blocks: blockRows.map(toBlockCamel),
+    blocks: [],
   };
 }
 
@@ -431,8 +446,8 @@ export async function uploadAttachment(caseStudyId: string, formData: FormData) 
     return { error: "File exceeds size limit of 12 MB." };
   }
 
-  const fileExt = file.name.split(".").pop();
-  const filePath = `${user.id}/${caseStudyId}/${Date.now()}.${fileExt}`;
+  const originalFileExt = file.name.split(".").pop();
+  const filePath = `${user.id}/${caseStudyId}/${Date.now()}.${originalFileExt}`;
   const fileBuffer = await file.arrayBuffer();
 
   const { error: uploadError } = await supabase.storage
@@ -486,6 +501,96 @@ export async function uploadAttachment(caseStudyId: string, formData: FormData) 
   }
 
   return { success: true, attachment: toAttachmentCamel(row) };
+}
+
+export async function uploadPrimaryDocument(caseStudyId: string, formData: FormData) {
+  const supabase = await createClient();
+  if (!supabase) return { error: "Supabase not configured" };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Unauthorized" };
+
+  // Security verify ownership of case study
+  const { data: csCheck } = await supabase
+    .from("case_studies")
+    .select("id")
+    .eq("id", caseStudyId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!csCheck) return { error: "Unauthorized to upload documents" };
+
+  const file = formData.get("file") as File;
+  if (!file) return { error: "No file provided" };
+
+  // Mime types check
+  const acceptedTypes = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ];
+  
+  const fileExt = file.name.split(".").pop()?.toLowerCase();
+  const allowedExtensions = ["pdf", "doc", "docx", "ppt", "pptx"];
+  const isAllowedExt = fileExt ? allowedExtensions.includes(fileExt) : false;
+
+  if (!acceptedTypes.includes(file.type) && !isAllowedExt) {
+    return { error: "Invalid file type. Only PDF, Word, and PowerPoint are accepted." };
+  }
+
+  // Size check: 20MB limit for primary docs
+  if (file.size > 20 * 1024 * 1024) {
+    return { error: "File exceeds size limit of 20 MB." };
+  }
+
+  const originalFileExt = file.name.split(".").pop();
+  const filePath = `${user.id}/${caseStudyId}/primary_${Date.now()}.${originalFileExt}`;
+  const fileBuffer = await file.arrayBuffer();
+
+  const { error: uploadError } = await supabase.storage
+    .from("portfolio-attachments")
+    .upload(filePath, fileBuffer, {
+      contentType: file.type,
+      upsert: true,
+    });
+
+  if (uploadError) {
+    return { error: `Storage upload failed: ${uploadError.message}` };
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from("portfolio-attachments").getPublicUrl(filePath);
+
+  // Update the case study with the primary document URL
+  const { data: row, error: dbError } = await supabase
+    .from("case_studies")
+    .update({ primary_document_url: publicUrl })
+    .eq("id", caseStudyId)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (dbError) {
+    return { error: `Registered file upload but failed updating case study: ${dbError.message}` };
+  }
+
+  // Revalidate
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("username")
+    .eq("id", user.id)
+    .single();
+
+  if (profile?.username) {
+    revalidatePath(`/p/${profile.username}/${row.slug}`);
+  }
+
+  return { success: true, caseStudy: toCaseCamel(row) };
 }
 
 // QUERY / FETCHING APIs (For Server-Side Rendering)
@@ -563,13 +668,13 @@ export async function fetchPublicCaseStudy(username: string, slug: string) {
     return { error: "Case study not found or unpublished" };
   }
 
-  const caseStudy = toCaseCamel(csRow);
+  const caseStudies = [toCaseCamel(csRow)];
 
   // Fetch blocks
   const { data: blockRows } = await supabase
     .from("case_study_blocks")
     .select("*")
-    .eq("case_study_id", caseStudy.id)
+    .eq("case_study_id", caseStudies[0].id)
     .order("sort_order", { ascending: true });
 
   const blocks = (blockRows ?? []).map(toBlockCamel);
@@ -578,11 +683,11 @@ export async function fetchPublicCaseStudy(username: string, slug: string) {
   const { data: attRows } = await supabase
     .from("attachments")
     .select("*")
-    .eq("case_study_id", caseStudy.id);
+    .eq("case_study_id", caseStudies[0].id);
 
   const attachments = (attRows ?? []).map(toAttachmentCamel);
 
-  return { profile, caseStudy, blocks, attachments };
+  return { profile, caseStudies, blocks, attachments };
 }
 
 // Fetch complete workspace data for dashboard
